@@ -11,7 +11,7 @@ import {
 } from './dto';
 
 type Page = Pick<PageQueryDto, 'page' | 'limit' | 'search'>;
-type Audited = { id: string; customerId?: string };
+type Audited = { id: string; customerId?: string | null };
 
 @Injectable()
 export class BusinessService {

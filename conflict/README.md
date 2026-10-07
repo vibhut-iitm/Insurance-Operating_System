@@ -4,20 +4,41 @@ NestJS REST API for the Insurance OS frontend in `..\shuffal`.
 
 ## Local setup
 
-Requirements: Node.js 20.11 or newer and PostgreSQL 14 or newer.
+Requirements: Node.js 20.11 or newer and PostgreSQL 14 or newer. Supabase
+PostgreSQL can be used instead of a local PostgreSQL server.
 
-1. Start PostgreSQL and create a database named `insurance_os`.
-2. Copy `.env.example` to `.env`; set `DATABASE_URL` to the local database URL and set a long, random `JWT_SECRET`.
-3. Install dependencies and prepare the database:
+1. In Supabase, open **Project Settings → Database → Connect** and copy both a
+   pooled connection string for the application and a direct connection string
+   for Prisma schema inspection/migrations. For the pooler, select transaction
+   mode. Replace the placeholders in `DATABASE_URL` and `DIRECT_URL` in your
+   local `.env`, copied from `.env.example`. The exact host/user/port depends on
+   your Supabase project and region. Never commit `.env` or share its password.
+2. Set a long, random `JWT_SECRET`.
+3. Install dependencies and generate the Prisma client:
 
    ```powershell
    npm install
    npm run prisma:generate
-   npm run prisma:migrate -- --name init
-   npm run prisma:seed
    ```
 
-4. Start the API:
+4. **If the Supabase tables already exist**, introspect them first:
+
+   ```powershell
+   npm run prisma:pull
+   npm run build
+   ```
+
+   Review the resulting `prisma/schema.prisma` before generating the client
+   again. Existing manually created `snake_case` tables may not match this
+   backend's original Prisma model/column names. Introspection maps the real
+   database; do not run `prisma:migrate` against an existing schema until the
+   Prisma schema has been reconciled with it.
+
+   For a brand-new, empty database instead, create a migration with
+   `npm run prisma:migrate -- --name init`. Do not run the development seed
+   against real customer data.
+
+5. Start the API:
 
    ```powershell
    npm run start:dev

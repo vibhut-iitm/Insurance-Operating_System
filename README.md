@@ -16,20 +16,24 @@ NestJS REST API in [`conflict/`](./conflict/), and the full product brief in
 
 ### 1. Configure PostgreSQL and the API
 
-Create the `insurance_os` database, then create `conflict/.env` from
-[`conflict/.env.example`](./conflict/.env.example). Set `DATABASE_URL` to your
-PostgreSQL connection string and replace `JWT_SECRET` with a long random secret.
-For Supabase, use the connection string from **Project Settings → Database**;
-keep credentials private in `.env` and do not commit that file.
+Create `conflict/.env` from
+[`conflict/.env.example`](./conflict/.env.example). For Supabase, copy the
+transaction-pooler URL into `DATABASE_URL` and the direct database URL into
+`DIRECT_URL` from **Project Settings → Database → Connect**. Replace
+`JWT_SECRET` with a long random secret. Keep all credentials private in `.env`;
+never commit or share that file.
 
 ```powershell
 cd conflict
 npm install
 npm run prisma:generate
-npm run prisma:migrate -- --name init
-npm run prisma:seed
 npm run start:dev
 ```
+
+If your Supabase tables already exist, run `npm run prisma:pull` and review the
+resulting Prisma schema before starting the API. Only run
+`npm run prisma:migrate -- --name init` for a new, empty database. Use the
+development seed only for local/test data, never real customer data.
 
 The API listens at `http://localhost:4000/api`, its health check is
 `http://localhost:4000/api/health`, and OpenAPI documentation is at
