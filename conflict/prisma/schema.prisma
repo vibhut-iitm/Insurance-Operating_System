@@ -3,13 +3,14 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-model Customer {
-  id          String   @id @default(uuid())
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model LegacyCustomer {
+  id          String         @id
   fullName    String
   dateOfBirth DateTime?
   gender      String?
@@ -22,465 +23,701 @@ model Customer {
   occupation  String?
   notes       String?
   status      CustomerStatus @default(ACTIVE)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime
 
-  familyMembers FamilyMember[]
-  leads         Lead[]
-  quotes        Quote[]
-  policies      Policy[]
-  claims        Claim[]
-  documents     Document[]
-  tasks         Task[]
-  activities    Activity[]
-  renewals      Renewal[]
-  grievances    Grievance[]
-  ombudsmanCases OmbudsmanCase[]
-  communications Communication[]
-  policyMembers PolicyMember[]
-  @@index([phone])
   @@index([email])
+  @@index([phone])
+  @@map("Customer")
 }
 
-model Role {
-  id        String   @id @default(uuid())
-  name      RoleName @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  users     User[]
-}
-
-model User {
-  id           String      @id @default(uuid())
-  name         String
-  email        String      @unique
-  passwordHash String
-  isActive     Boolean     @default(true)
-  roleId       String
-  role         Role        @relation(fields: [roleId], references: [id])
-  assignedLeads Lead[]     @relation("LeadAssignee")
-  assignedPolicies Policy[] @relation("PolicyAssignee")
-  assignedRenewals Renewal[] @relation("RenewalAssignee")
-  assignedClaims Claim[]   @relation("ClaimAssignee")
-  assignedTasks Task[]     @relation("TaskAssignee")
-  activities   Activity[]
-  auditLogs    AuditLog[]
-  documents    Document[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  @@index([roleId])
-}
-
-model FamilyMember {
-  id           String   @id @default(uuid())
-  customerId   String
-  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  fullName     String
-  relationship String
-  dateOfBirth  DateTime?
-  gender       String?
-  phone        String?
-  isArchived   Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime  @updatedAt
-  @@index([customerId])
-}
-
-model Grievance {
-  id                String           @id @default(uuid())
-  customerId        String
-  customer          Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  referenceNumber   String           @unique
-  category          String
-  description       String
-  status            GrievanceStatus  @default(OPEN)
-  complaintDate     DateTime         @default(now())
-  escalationDate   DateTime?
-  followUpDeadline DateTime?
-  companyResponse  String?
-  resolvedAt        DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  ombudsmanCases    OmbudsmanCase[]
-  communications    Communication[]
-  @@index([customerId, status])
-  @@index([followUpDeadline, status])
-}
-
-model OmbudsmanCase {
-  id             String              @id @default(uuid())
-  customerId     String
-  customer       Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  grievanceId    String?
-  grievance      Grievance?          @relation(fields: [grievanceId], references: [id], onDelete: SetNull)
-  caseNumber     String              @unique
-  status         OmbudsmanCaseStatus @default(DRAFT)
-  submissionDate DateTime?
-  hearingDate    DateTime?
-  deadline       DateTime?
-  award          String?
-  notes          String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  communications Communication[]
-  @@index([customerId, status])
-  @@index([deadline, status])
-}
-
-model Communication {
-  id               String             @id @default(uuid())
-  customerId       String
-  customer         Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  grievanceId      String?
-  grievance        Grievance?         @relation(fields: [grievanceId], references: [id], onDelete: SetNull)
-  ombudsmanCaseId  String?
-  ombudsmanCase    OmbudsmanCase?     @relation(fields: [ombudsmanCaseId], references: [id], onDelete: SetNull)
-  channel          CommunicationChannel
-  direction        CommunicationDirection @default(OUTBOUND)
-  subject          String?
-  body             String
-  status           String             @default("RECORDED")
-  occurredAt       DateTime           @default(now())
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  @@index([customerId, occurredAt])
-  @@index([grievanceId])
-  @@index([ombudsmanCaseId])
-}
-
-model InsuranceProduct {
-  id          String   @id @default(uuid())
-  name        String
-  insurer     String
-  category    String
-  description String?
-  isActive    Boolean  @default(true)
-  quotes      Quote[]
-  policies    Policy[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  @@index([category, isActive])
-}
-
-model Lead {
-  id             String       @id @default(uuid())
-  customerId     String
-  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  source         String
-  status         LeadStatus   @default(NEW)
-  priority       Priority     @default(NORMAL)
-  assignedUserId String?
-  assignedUser   User?        @relation("LeadAssignee", fields: [assignedUserId], references: [id])
-  expectedValue  Decimal?     @db.Decimal(14, 2)
-  followUpDate   DateTime?
-  notes          String?
-  requirement    String?
-  category       String?
-  quotes         Quote[]
-  tasks          Task[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  @@index([status, followUpDate])
-  @@index([customerId])
-}
-
-model Quote {
-  id             String        @id @default(uuid())
-  customerId     String
-  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  leadId         String?
-  lead           Lead?         @relation(fields: [leadId], references: [id])
-  productId      String
-  product        InsuranceProduct @relation(fields: [productId], references: [id])
-  insurer        String
-  coverage       String?
-  premium        Decimal       @db.Decimal(14, 2)
-  quoteDate      DateTime      @default(now())
-  validityDate   DateTime?
-  benefits       Json?
-  exclusions     Json?
-  deductibles    String?
-  riders         Json?
-  status         QuoteStatus   @default(DRAFT)
-  notes          String?
-  acceptedPolicy Policy?       @relation("AcceptedQuote")
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  @@index([customerId, status])
-  @@index([leadId])
-}
-
-model Policy {
-  id             String        @id @default(uuid())
-  customerId     String
-  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  productId      String
-  product        InsuranceProduct @relation(fields: [productId], references: [id])
-  quoteId        String?       @unique
-  quote          Quote?        @relation("AcceptedQuote", fields: [quoteId], references: [id])
-  assignedUserId String?
-  assignedUser   User?         @relation("PolicyAssignee", fields: [assignedUserId], references: [id])
-  policyNumber   String        @unique
-  policyType     String
-  startDate      DateTime
-  endDate        DateTime
-  premium        Decimal       @db.Decimal(14, 2)
-  sumInsured     Decimal?      @db.Decimal(14, 2)
-  paymentFrequency String?
-  status         PolicyStatus  @default(PENDING)
-  notes          String?
-  renewals       Renewal[]
-  members        PolicyMember[]
-  claims         Claim[]
-  documents      Document[]
-  tasks          Task[]
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  @@index([customerId, status])
-  @@index([endDate, status])
-}
-
-model PolicyMember {
-  id           String   @id @default(uuid())
-  policyId     String
-  policy       Policy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  customerId   String
-  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  fullName     String
-  relationship String?
-  dateOfBirth  DateTime?
-  isArchived   Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  @@index([policyId])
-  @@index([customerId])
-}
-
-model Renewal {
-  id             String         @id @default(uuid())
-  policyId       String
-  policy         Policy         @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  customerId     String
-  customer       Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  renewalDate    DateTime
-  reminderDate   DateTime?
-  status         RenewalStatus  @default(UPCOMING)
-  assignedUserId String?
-  assignedUser   User?          @relation("RenewalAssignee", fields: [assignedUserId], references: [id])
-  notes          String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  @@index([renewalDate, status])
-  @@unique([policyId, renewalDate])
-}
-
-model Claim {
-  id             String       @id @default(uuid())
-  customerId     String
-  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  policyId       String
-  policy         Policy       @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  assignedUserId String?
-  assignedUser   User?        @relation("ClaimAssignee", fields: [assignedUserId], references: [id])
-  claimNumber    String       @unique
-  claimType      String
-  incidentDate   DateTime?
-  claimDate      DateTime     @default(now())
-  amount         Decimal?     @db.Decimal(14, 2)
-  status         ClaimStatus  @default(NEW)
-  description    String?
-  notes          String?
-  insuredPerson  String?
-  hospital       String?
-  admissionDate  DateTime?
-  dischargeDate  DateTime?
-  settlementAmount Decimal? @db.Decimal(14, 2)
-  decision       String?
-  closureReason  String?
-  documents      Document[]
-  tasks          Task[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  @@index([customerId, status])
-}
-
-model Document {
-  id           String    @id @default(uuid())
-  fileName     String
-  fileType     String
-  fileSize     Int
-  storageKey   String    @unique
-  customerId   String?
-  customer     Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  policyId     String?
-  policy       Policy?   @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  claimId      String?
-  claim        Claim?    @relation(fields: [claimId], references: [id], onDelete: Cascade)
-  uploadedById String
-  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
-  category     String    @default("OTHER")
-  tags         String[]  @default([])
-  isArchived   Boolean   @default(false)
-  expiryDate   DateTime?
-  reminderDate DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  @@index([customerId, createdAt])
-}
-
-model Task {
-  id             String       @id @default(uuid())
-  title          String
-  description    String?
-  assignedUserId String?
-  assignedUser   User?        @relation("TaskAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
-  customerId     String?
-  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  policyId       String?
-  policy         Policy?      @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  relatedEntity  String?
-  leadId         String?
-  lead           Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
-  claimId        String?
-  claim          Claim?       @relation(fields: [claimId], references: [id], onDelete: SetNull)
-  priority       Priority     @default(NORMAL)
-  dueDate        DateTime
-  status         TaskStatus   @default(PENDING)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  @@index([assignedUserId, status, dueDate])
-  @@index([customerId])
-  @@index([leadId])
-  @@index([claimId])
-}
-
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Activity {
-  id         String   @id @default(uuid())
-  customerId String
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  userId     String?
-  user       User?    @relation(fields: [userId], references: [id])
-  type       String
-  description String
-  metadata   Json?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  @@index([customerId, createdAt])
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId   String    @db.Uuid @map("customer_id")
+  userId       String?   @db.Uuid @map("actor_user_id")
+  type         String    @map("event_type")
+  description   String
+  entityType   String? @map("entity_type")
+  entityId     String?   @db.Uuid @map("entity_id")
+  metadata      Json      @default("{}")
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  user         User?    @relation(fields: [userId], references: [id], onUpdate: NoAction, map: "fk_activities_actor")
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_activities_customer")
+
+  @@index([customerId, createdAt], map: "idx_activities_customer_created")
+  @@index([entityType, entityId], map: "idx_activities_entity")
+  @@map("activities")
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model AuditLog {
-  id         String   @id @default(uuid())
-  userId     String?
-  user       User?    @relation(fields: [userId], references: [id])
-  action     String
-  entity     String
-  entityId   String
-  previousValue Json?
-  newValue   Json?
-  ipAddress  String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  @@index([entity, entityId])
-  @@index([createdAt])
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String?  @db.Uuid @map("user_id")
+  action       String
+  entity      String @map("entity_type")
+  entityId    String?  @db.Uuid @map("entity_id")
+  beforeValue Json? @map("before_value")
+  afterValue  Json? @map("after_value")
+  ipAddress   String?  @db.Inet @map("ip_address")
+  createdAt   DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  user        User?   @relation(fields: [userId], references: [id], onUpdate: NoAction, map: "fk_audit_logs_user")
+
+  @@index([createdAt], map: "idx_audit_logs_created_at")
+  @@index([entity, entityId], map: "idx_audit_logs_entity")
+  @@map("audit_logs")
 }
 
-enum RoleName {
-  ADMIN
-  MANAGER
-  AGENT
-  STAFF
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model ClaimDocument {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  claimId          String    @db.Uuid @map("claim_id")
+  documentId       String    @db.Uuid @map("document_id")
+  documentCategory String @map("document_category")
+  isRequired       Boolean   @default(false) @map("is_required")
+  receivedAt       DateTime? @db.Timestamptz(6) @map("received_at")
+  status            String    @default("PENDING")
+  notes             String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt        DateTime  @default(now()) @db.Timestamptz(6) @map("updated_at")
+  claim            Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_claim_documents_claim")
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_claim_documents_document")
+
+  @@unique([claimId, documentId], map: "uq_claim_document")
+  @@map("claim_documents")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model ClaimQuery {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  claimId      String    @db.Uuid @map("claim_id")
+  queryText    String @map("query_text")
+  receivedAt   DateTime  @db.Timestamptz(6) @map("received_at")
+  responseText String? @map("response_text")
+  respondedAt  DateTime? @db.Timestamptz(6) @map("responded_at")
+  status        String    @default("OPEN")
+  deadline      DateTime? @db.Timestamptz(6)
+  createdBy    String?   @db.Uuid @map("created_by")
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt    DateTime  @default(now()) @db.Timestamptz(6) @map("updated_at")
+  claim        Claim    @relation(fields: [claimId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_claim_queries_claim")
+  user         User?    @relation(fields: [createdBy], references: [id], onUpdate: NoAction, map: "fk_claim_queries_created_by")
+
+  @@index([claimId], map: "idx_claim_queries_claim_id")
+  @@index([status], map: "idx_claim_queries_status")
+  @@map("claim_queries")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Claim {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId          String            @db.Uuid @map("customer_id")
+  policyId            String            @db.Uuid @map("policy_id")
+  policyMemberId     String?           @db.Uuid @map("policy_member_id")
+  claimNumber         String            @unique @map("claim_number")
+  claimType           String @map("claim_type")
+  status               String            @default("NEW")
+  incidentDate        DateTime?         @db.Date @map("incident_date")
+  claimDate           DateTime          @default(dbgenerated("CURRENT_DATE")) @db.Date @map("claim_date")
+  admissionDate       DateTime?         @db.Date @map("admission_date")
+  dischargeDate       DateTime?         @db.Date @map("discharge_date")
+  hospitalOrProvider String? @map("hospital_or_provider")
+  amount               Decimal?          @db.Decimal(14, 2)
+  settlementAmount    Decimal?          @db.Decimal(14, 2) @map("settlement_amount")
+  decision             String?
+  closureReason       String? @map("closure_reason")
+  assignedUserId     String?           @db.Uuid @map("assigned_user_id")
+  description          String?
+  notes                String?
+  createdAt           DateTime          @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime          @default(now()) @db.Timestamptz(6) @map("updated_at")
+  claimDocuments       ClaimDocument[]
+  claimQueries         ClaimQuery[]
+  assignedUser        User?            @relation(fields: [assignedUserId], references: [id], onUpdate: NoAction, map: "fk_claims_assigned_user")
+  customer            Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_claims_customer")
+  policy             Policy          @relation(fields: [policyId], references: [id], onUpdate: NoAction, map: "fk_claims_policy")
+  policyMember       PolicyMember?   @relation(fields: [policyMemberId], references: [id], onUpdate: NoAction, map: "fk_claims_policy_member")
+  documents            Document[]
+  tasks                Task[]
+
+  @@index([customerId], map: "idx_claims_customer_id")
+  @@index([policyId], map: "idx_claims_policy_id")
+  @@index([status], map: "idx_claims_status")
+  @@map("claims")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Communication {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId         String    @db.Uuid @map("customer_id")
+  channel             String
+  direction           String
+  subject             String?
+  body                String
+  status              String    @default("RECORDED")
+  occurredAt         DateTime  @default(now()) @db.Timestamptz(6) @map("occurred_at")
+  providerMessageId String? @map("provider_message_id")
+  createdBy          String?   @db.Uuid @map("created_by")
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt          DateTime  @default(now()) @db.Timestamptz(6) @map("updated_at")
+  user               User?    @relation(fields: [createdBy], references: [id], onUpdate: NoAction, map: "fk_communications_created_by")
+  customer           Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_communications_customer")
+
+  @@index([customerId], map: "idx_communications_customer_id")
+  @@index([occurredAt], map: "idx_communications_occurred_at")
+  @@map("communications")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model CustomerTag {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String    @db.Uuid @map("customer_id")
+  tag         String
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_customer_tags_customer")
+
+  @@unique([customerId, tag], map: "uq_customer_tag")
+  @@index([customerId], map: "idx_customer_tags_customer_id")
+  @@map("customer_tags")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Customer {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fullName         String @map("full_name")
+  phone             String
+  email             String?
+  dateOfBirth     DateTime?           @db.Date @map("date_of_birth")
+  gender            String?
+  address           String?
+  city              String?
+  state             String?
+  pincode           String?
+  occupation        String?
+  kycStatus        String? @map("kyc_status")
+  notes             String?
+  status            String              @default("ACTIVE")
+  createdAt        DateTime            @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt        DateTime            @default(now()) @db.Timestamptz(6) @map("updated_at")
+  activities        Activity[]
+  claims            Claim[]
+  communications    Communication[]
+  tags              CustomerTag[]
+  documents         Document[]
+  familyMembers     FamilyMember[]
+  grievances        Grievance[]
+  leads             Lead[]
+  ombudsmanCases    OmbudsmanCase[]
+  policies          Policy[]
+  quoteComparisons  QuoteComparison[]
+  quotes            Quote[]
+  tasks             Task[]
+
+  @@index([email], map: "idx_customers_email")
+  @@index([phone], map: "idx_customers_phone")
+  @@map("customers")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model DocumentVersion {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId     String    @db.Uuid @map("document_id")
+  versionNumber  Int @map("version_number")
+  storageKey     String    @unique @map("storage_key")
+  mimeType       String @map("mime_type")
+  fileSizeBytes BigInt @map("file_size_bytes")
+  checksum        String?
+  uploadedBy     String?   @db.Uuid @map("uploaded_by")
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  document       Document @relation(fields: [documentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_document_versions_document")
+  user           User?    @relation(fields: [uploadedBy], references: [id], onUpdate: NoAction, map: "fk_document_versions_uploaded_by")
+
+  @@unique([documentId, versionNumber], map: "uq_document_version")
+  @@map("document_versions")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Document {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId       String?             @db.Uuid @map("customer_id")
+  policyId         String?             @db.Uuid @map("policy_id")
+  claimId          String?             @db.Uuid @map("claim_id")
+  fileName         String @map("file_name")
+  category          String
+  fileType         String @map("mime_type")
+  fileSize         BigInt @map("file_size_bytes")
+  storageProvider  String @map("storage_provider")
+  storageKey       String              @unique @map("storage_key")
+  checksum          String?
+  expiryDate       DateTime?           @db.Date @map("expiry_date")
+  reminderDate     DateTime?           @db.Date @map("reminder_date")
+  uploadedById     String?             @db.Uuid @map("uploaded_by")
+  isArchived       Boolean             @default(false) @map("is_archived")
+  createdAt        DateTime            @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt        DateTime            @default(now()) @db.Timestamptz(6) @map("updated_at")
+  claimDocuments    ClaimDocument[]
+  documentVersions  DocumentVersion[]
+  claim            Claim?             @relation(fields: [claimId], references: [id], onUpdate: NoAction, map: "fk_documents_claim")
+  customer         Customer?          @relation(fields: [customerId], references: [id], onUpdate: NoAction, map: "fk_documents_customer")
+  policy          Policy?           @relation(fields: [policyId], references: [id], onUpdate: NoAction, map: "fk_documents_policy")
+  user             User?              @relation(fields: [uploadedById], references: [id], onUpdate: NoAction, map: "fk_documents_uploaded_by")
+
+  @@index([claimId], map: "idx_documents_claim_id")
+  @@index([customerId], map: "idx_documents_customer_id")
+  @@index([policyId], map: "idx_documents_policy_id")
+  @@map("documents")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model FamilyMember {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId    String           @db.Uuid @map("customer_id")
+  fullName      String @map("full_name")
+  relationship   String
+  dateOfBirth  DateTime?        @db.Date @map("date_of_birth")
+  gender         String?
+  phone          String?
+  notes          String?
+  isArchived    Boolean          @default(false) @map("is_archived")
+  createdAt     DateTime         @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt     DateTime         @default(now()) @db.Timestamptz(6) @map("updated_at")
+  customer      Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_family_members_customer")
+  policyMembers PolicyMember[]
+
+  @@index([customerId], map: "idx_family_members_customer_id")
+  @@map("family_members")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Grievance {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId        String            @db.Uuid @map("customer_id")
+  policyId          String?           @db.Uuid @map("policy_id")
+  insurerId         String?           @db.Uuid @map("insurer_id")
+  referenceNumber   String            @unique @map("reference_number")
+  category           String
+  description        String
+  status             String            @default("OPEN")
+  complaintDate     DateTime          @db.Date @map("complaint_date")
+  escalationDate    DateTime?         @db.Date @map("escalation_date")
+  followUpDeadline DateTime?         @db.Date @map("follow_up_deadline")
+  companyResponse   String? @map("company_response")
+  resolvedAt        DateTime?         @db.Timestamptz(6) @map("resolved_at")
+  assignedUserId   String?           @db.Uuid @map("assigned_user_id")
+  createdAt         DateTime          @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt         DateTime          @default(now()) @db.Timestamptz(6) @map("updated_at")
+  assignedUser      User?            @relation(fields: [assignedUserId], references: [id], onUpdate: NoAction, map: "fk_grievances_assigned_user")
+  customer          Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_grievances_customer")
+  insurer           Insurer?         @relation(fields: [insurerId], references: [id], onUpdate: NoAction, map: "fk_grievances_insurer")
+  policy           Policy?         @relation(fields: [policyId], references: [id], onUpdate: NoAction, map: "fk_grievances_policy")
+  ombudsmanCases     OmbudsmanCase[]
+
+  @@index([customerId], map: "idx_grievances_customer_id")
+  @@index([status], map: "idx_grievances_status")
+  @@map("grievances")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model InsuranceCategory {
+  id                         String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                       String
+  slug                       String                 @unique
+  parentId                  String?                @db.Uuid @map("parent_id")
+  description                String?
+  customFields              Json                   @default("[]") @map("custom_fields")
+  isActive                  Boolean                @default(true) @map("is_active")
+  sortOrder                 Int                    @default(0) @map("sort_order")
+  createdAt                 DateTime               @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt                 DateTime               @default(now()) @db.Timestamptz(6) @map("updated_at")
+  category       InsuranceCategory?  @relation("insurance_categoriesToinsurance_categories", fields: [parentId], references: [id], onUpdate: NoAction, map: "fk_insurance_categories_parent")
+  otherInsuranceCategories InsuranceCategory[] @relation("insurance_categoriesToinsurance_categories")
+  insuranceProducts          InsuranceProduct[]
+  leads                      Lead[]
+
+  @@index([parentId], map: "idx_insurance_categories_parent_id")
+  @@map("insurance_categories")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model InsuranceProduct {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  insurerId           String               @db.Uuid @map("insurer_id")
+  categoryId          String               @db.Uuid @map("category_id")
+  name                 String
+  code                 String?
+  description          String?
+  isActive            Boolean              @default(true) @map("is_active")
+  metadata             Json                 @default("{}")
+  createdAt           DateTime             @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime             @default(now()) @db.Timestamptz(6) @map("updated_at")
+  category InsuranceCategory @relation(fields: [categoryId], references: [id], onUpdate: NoAction, map: "fk_insurance_products_category")
+  insurer             Insurer             @relation(fields: [insurerId], references: [id], onUpdate: NoAction, map: "fk_insurance_products_insurer")
+  policies             Policy[]
+  productVariants      ProductVariant[]
+  quotes               Quote[]
+
+  @@unique([insurerId, code], map: "uq_insurer_product_code")
+  @@index([categoryId], map: "idx_insurance_products_category_id")
+  @@index([insurerId], map: "idx_insurance_products_insurer_id")
+  @@map("insurance_products")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Insurer {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String               @unique
+  code               String?              @unique
+  website            String?
+  supportPhone      String? @map("support_phone")
+  supportEmail      String? @map("support_email")
+  isActive          Boolean              @default(true) @map("is_active")
+  metadata           Json                 @default("{}")
+  createdAt         DateTime             @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt         DateTime             @default(now()) @db.Timestamptz(6) @map("updated_at")
+  grievances         Grievance[]
+  insuranceProducts InsuranceProduct[]
+  policies           Policy[]
+  @@map("insurers")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model LeadRequirement {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId     String   @db.Uuid @map("lead_id")
+  fieldName  String @map("field_name")
+  fieldValue Json @map("field_value")
+  createdAt  DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt  DateTime @default(now()) @db.Timestamptz(6) @map("updated_at")
+  lead       Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_lead_requirements_lead")
+
+  @@unique([leadId, fieldName], map: "uq_lead_requirement_field")
+  @@map("lead_requirements")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Lead {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId          String                @db.Uuid @map("customer_id")
+  source               String
+  categoryId          String?               @db.Uuid @map("category_id")
+  requirement          String?
+  status               String                @default("NEW")
+  priority             String                @default("NORMAL")
+  assignedUserId     String?               @db.Uuid @map("assigned_user_id")
+  expectedValue       Decimal?              @db.Decimal(14, 2) @map("expected_value")
+  followUpDate       DateTime?             @db.Timestamptz(6) @map("follow_up_at")
+  notes                String?
+  createdAt           DateTime              @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime              @default(now()) @db.Timestamptz(6) @map("updated_at")
+  leadRequirements    LeadRequirement[]
+  assignedUser        User?                @relation(fields: [assignedUserId], references: [id], onUpdate: NoAction, map: "fk_leads_assigned_user")
+  category InsuranceCategory? @relation(fields: [categoryId], references: [id], onUpdate: NoAction, map: "fk_leads_category")
+  customer            Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_leads_customer")
+  quoteComparisons     QuoteComparison[]
+  quotes               Quote[]
+  tasks                Task[]
+
+  @@index([assignedUserId], map: "idx_leads_assigned_user_id")
+  @@index([customerId], map: "idx_leads_customer_id")
+  @@index([status], map: "idx_leads_status")
+  @@map("leads")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Notification {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @db.Uuid @map("user_id")
+  type         String
+  title        String
+  message      String
+  payload      Json      @default("{}")
+  scheduledAt DateTime? @db.Timestamptz(6) @map("scheduled_at")
+  sentAt      DateTime? @db.Timestamptz(6) @map("sent_at")
+  readAt      DateTime? @db.Timestamptz(6) @map("read_at")
+  status       String    @default("PENDING")
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt   DateTime  @default(now()) @db.Timestamptz(6) @map("updated_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_notifications_user")
+
+  @@index([scheduledAt], map: "idx_notifications_scheduled_at")
+  @@index([status], map: "idx_notifications_status")
+  @@index([userId], map: "idx_notifications_user_id")
+  @@map("notifications")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model OmbudsmanCase {
+  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId      String      @db.Uuid @map("customer_id")
+  grievanceId     String?     @db.Uuid @map("grievance_id")
+  caseNumber      String      @unique @map("case_number")
+  status           String      @default("DRAFT")
+  submissionDate  DateTime?   @db.Date @map("submission_date")
+  hearingDate     DateTime?   @db.Timestamptz(6) @map("hearing_date")
+  deadline         DateTime?   @db.Date
+  award          String? @map("award_or_order")
+  closedAt        DateTime?   @db.Timestamptz(6) @map("closed_at")
+  notes            String?
+  assignedUserId String?     @db.Uuid @map("assigned_user_id")
+  createdAt       DateTime    @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime    @default(now()) @db.Timestamptz(6) @map("updated_at")
+  assignedUser    User?      @relation(fields: [assignedUserId], references: [id], onUpdate: NoAction, map: "fk_ombudsman_assigned_user")
+  customer        Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ombudsman_customer")
+  grievance       Grievance? @relation(fields: [grievanceId], references: [id], onUpdate: NoAction, map: "fk_ombudsman_grievance")
+
+  @@index([customerId], map: "idx_ombudsman_customer_id")
+  @@index([status], map: "idx_ombudsman_status")
+  @@map("ombudsman_cases")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Policy {
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId          String             @db.Uuid @map("customer_id")
+  productId           String             @db.Uuid @map("product_id")
+  variantId           String?            @db.Uuid @map("variant_id")
+  insurerId           String             @db.Uuid @map("insurer_id")
+  quoteId             String?            @db.Uuid @map("quote_id")
+  policyNumber        String             @unique @map("policy_number")
+  policyType          String @map("policy_type")
+  status               String             @default("PENDING")
+  startDate           DateTime           @db.Date @map("start_date")
+  endDate             DateTime           @db.Date @map("end_date")
+  premium              Decimal            @db.Decimal(14, 2)
+  sumInsured          Decimal?           @db.Decimal(14, 2) @map("sum_insured")
+  paymentFrequency    String? @map("payment_frequency")
+  nominee              Json?
+  riders               Json?
+  importantExclusions String? @map("important_exclusions")
+  assignedUserId     String?            @db.Uuid @map("assigned_user_id")
+  notes                String?
+  createdAt           DateTime           @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime           @default(now()) @db.Timestamptz(6) @map("updated_at")
+  claims               Claim[]
+  documents            Document[]
+  grievances           Grievance[]
+  assignedUser        User?             @relation(fields: [assignedUserId], references: [id], onUpdate: NoAction, map: "fk_policies_assigned_user")
+  customer            Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_policies_customer")
+  insurer             Insurer           @relation(fields: [insurerId], references: [id], onUpdate: NoAction, map: "fk_policies_insurer")
+  product   InsuranceProduct @relation(fields: [productId], references: [id], onUpdate: NoAction, map: "fk_policies_product")
+  quote               Quote?            @relation(fields: [quoteId], references: [id], onUpdate: NoAction, map: "fk_policies_quote")
+  productVariant     ProductVariant?  @relation(fields: [variantId], references: [id], onUpdate: NoAction, map: "fk_policies_variant")
+  members              PolicyMember[]
+  renewals             Renewal[]
+  tasks                Task[]
+
+  @@index([assignedUserId], map: "idx_policies_assigned_user_id")
+  @@index([customerId], map: "idx_policies_customer_id")
+  @@index([insurerId], map: "idx_policies_insurer_id")
+  @@index([status], map: "idx_policies_status")
+  @@map("policies")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model PolicyMember {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyId        String          @db.Uuid @map("policy_id")
+  familyMemberId String?         @db.Uuid @map("family_member_id")
+  fullName        String @map("full_name")
+  relationship     String?
+  dateOfBirth    DateTime?       @db.Date @map("date_of_birth")
+  isArchived      Boolean         @default(false) @map("is_archived")
+  createdAt       DateTime        @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime        @default(now()) @db.Timestamptz(6) @map("updated_at")
+  claims           Claim[]
+  familyMember   FamilyMember? @relation(fields: [familyMemberId], references: [id], onUpdate: NoAction, map: "fk_policy_members_family_member")
+  policy         Policy        @relation(fields: [policyId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_policy_members_policy")
+
+  @@index([policyId], map: "idx_policy_members_policy_id")
+  @@map("policy_members")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Renewal {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  policyId        String    @db.Uuid @map("policy_id")
+  renewalNumber   Int @map("renewal_number")
+  renewalDate     DateTime  @db.Date @map("renewal_date")
+  reminderDate    DateTime? @db.Date @map("reminder_date")
+  status           String    @default("UPCOMING")
+  premiumDue      Decimal?  @db.Decimal(14, 2) @map("premium_due")
+  assignedUserId String?   @db.Uuid @map("assigned_user_id")
+  completedAt     DateTime? @db.Timestamptz(6) @map("completed_at")
+  notes            String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime  @default(now()) @db.Timestamptz(6) @map("updated_at")
+  assignedUser    User?    @relation(fields: [assignedUserId], references: [id], onUpdate: NoAction, map: "fk_policy_renewals_assigned_user")
+  policy         Policy  @relation(fields: [policyId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_policy_renewals_policy")
+
+  @@unique([policyId, renewalNumber], map: "uq_policy_renewal")
+  @@index([renewalDate], map: "idx_policy_renewals_date")
+  @@index([status], map: "idx_policy_renewals_status")
+  @@map("policy_renewals")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model ProductVariant {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId         String             @db.Uuid @map("product_id")
+  name               String
+  code               String?
+  variantType       String? @map("variant_type")
+  customFields      Json               @default("{}") @map("custom_fields")
+  isActive          Boolean            @default(true) @map("is_active")
+  createdAt         DateTime           @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt         DateTime           @default(now()) @db.Timestamptz(6) @map("updated_at")
+  policies           Policy[]
+  product InsuranceProduct @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_product_variants_product")
+  quotes             Quote[]
+
+  @@index([productId], map: "idx_product_variants_product_id")
+  @@map("product_variants")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model QuoteComparison {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId     String    @db.Uuid @map("customer_id")
+  leadId         String?   @db.Uuid @map("lead_id")
+  title           String
+  quote_ids       String[]  @db.Uuid
+  comparisonData Json      @default("{}") @map("comparison_data")
+  createdBy      String?   @db.Uuid @map("created_by")
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt      DateTime  @default(now()) @db.Timestamptz(6) @map("updated_at")
+  user           User?    @relation(fields: [createdBy], references: [id], onUpdate: NoAction, map: "fk_quote_comparisons_created_by")
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_quote_comparisons_customer")
+  lead           Lead?    @relation(fields: [leadId], references: [id], onUpdate: NoAction, map: "fk_quote_comparisons_lead")
+  @@map("quote_comparisons")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model QuoteVersion {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteId       String   @db.Uuid @map("quote_id")
+  versionNumber Int @map("version_number")
+  snapshot       Json
+  createdBy     String?  @db.Uuid @map("created_by")
+  createdAt     DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  user          User?   @relation(fields: [createdBy], references: [id], onUpdate: NoAction, map: "fk_quote_versions_created_by")
+  quote         Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_quote_versions_quote")
+
+  @@unique([quoteId, versionNumber], map: "uq_quote_version")
+  @@map("quote_versions")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Quote {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId        String             @db.Uuid @map("customer_id")
+  leadId            String?            @db.Uuid @map("lead_id")
+  productId         String             @db.Uuid @map("product_id")
+  variantId         String?            @db.Uuid @map("variant_id")
+  status             String             @default("DRAFT")
+  premium            Decimal            @db.Decimal(14, 2)
+  sumInsured        Decimal?           @db.Decimal(14, 2) @map("sum_insured")
+  currency           String             @default("INR") @db.Char(3)
+  coverage           Json?
+  benefits           Json?
+  exclusions         Json?
+  deductibles        String?
+  riders             Json?
+  validityDate      DateTime?          @db.Date @map("valid_until")
+  notes              String?
+  createdAt         DateTime           @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt         DateTime           @default(now()) @db.Timestamptz(6) @map("updated_at")
+  policies           Policy[]
+  quoteVersions      QuoteVersion[]
+  customer          Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_quotes_customer")
+  lead              Lead?             @relation(fields: [leadId], references: [id], onUpdate: NoAction, map: "fk_quotes_lead")
+  product InsuranceProduct @relation(fields: [productId], references: [id], onUpdate: NoAction, map: "fk_quotes_product")
+  productVariant   ProductVariant?  @relation(fields: [variantId], references: [id], onUpdate: NoAction, map: "fk_quotes_variant")
+
+  @@index([customerId], map: "idx_quotes_customer_id")
+  @@index([leadId], map: "idx_quotes_lead_id")
+  @@index([productId], map: "idx_quotes_product_id")
+  @@map("quotes")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Setting {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String   @unique
+  value       Json
+  description String?
+  updatedBy  String?  @db.Uuid @map("updated_by")
+  createdAt  DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt  DateTime @default(now()) @db.Timestamptz(6) @map("updated_at")
+  user       User?   @relation(fields: [updatedBy], references: [id], onUpdate: NoAction, map: "fk_settings_updated_by")
+  @@map("settings")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Task {
+  id               String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title            String
+  description      String?
+  customerId      String?    @db.Uuid @map("customer_id")
+  leadId          String?    @db.Uuid @map("lead_id")
+  policyId        String?    @db.Uuid @map("policy_id")
+  claimId         String?    @db.Uuid @map("claim_id")
+  assignedUserId String?    @db.Uuid @map("assigned_user_id")
+  priority         String     @default("NORMAL")
+  status           String     @default("PENDING")
+  dueDate         DateTime   @db.Timestamptz(6) @map("due_at")
+  completedAt     DateTime?  @db.Timestamptz(6) @map("completed_at")
+  outcome          String?
+  createdAt       DateTime   @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime   @default(now()) @db.Timestamptz(6) @map("updated_at")
+  assignedUser    User?     @relation(fields: [assignedUserId], references: [id], onUpdate: NoAction, map: "fk_tasks_assigned_user")
+  claim           Claim?    @relation(fields: [claimId], references: [id], onUpdate: NoAction, map: "fk_tasks_claim")
+  customer        Customer? @relation(fields: [customerId], references: [id], onUpdate: NoAction, map: "fk_tasks_customer")
+  lead            Lead?     @relation(fields: [leadId], references: [id], onUpdate: NoAction, map: "fk_tasks_lead")
+  policy         Policy?  @relation(fields: [policyId], references: [id], onUpdate: NoAction, map: "fk_tasks_policy")
+
+  @@index([assignedUserId], map: "idx_tasks_assigned_user_id")
+  @@index([status, dueDate], map: "idx_tasks_status_due_at")
+  @@map("tasks")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model User {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  email             String              @unique
+  passwordHash     String @map("password_hash")
+  role              String
+  isActive         Boolean             @default(true) @map("is_active")
+  lastLoginAt     DateTime?           @db.Timestamptz(6) @map("last_login_at")
+  createdAt        DateTime            @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt        DateTime            @default(now()) @db.Timestamptz(6) @map("updated_at")
+  activities        Activity[]
+  auditLogs         AuditLog[]
+  claimQueries      ClaimQuery[]
+  claims            Claim[]
+  communications    Communication[]
+  documentVersions  DocumentVersion[]
+  documents         Document[]
+  grievances        Grievance[]
+  leads             Lead[]
+  notifications     Notification[]
+  ombudsmanCases    OmbudsmanCase[]
+  policies          Policy[]
+  policyRenewals    Renewal[]
+  quoteComparisons  QuoteComparison[]
+  quoteVersions     QuoteVersion[]
+  settings          Setting[]
+  tasks             Task[]
+
+  @@index([email], map: "idx_users_email")
+  @@index([role], map: "idx_users_role")
+  @@map("users")
 }
 
 enum CustomerStatus {
   ACTIVE
   INACTIVE
-}
-
-enum LeadStatus {
-  NEW
-  CONTACTED
-  QUALIFIED
-  PROPOSAL
-  WON
-  LOST
-}
-
-enum QuoteStatus {
-  DRAFT
-  SENT
-  ACCEPTED
-  REJECTED
-  EXPIRED
-}
-
-enum PolicyStatus {
-  ACTIVE
-  EXPIRED
-  CANCELLED
-  LAPSED
-  PENDING
-}
-
-enum RenewalStatus {
-  UPCOMING
-  DUE
-  OVERDUE
-  COMPLETED
-  CANCELLED
-}
-
-enum ClaimStatus {
-  NEW
-  DOCUMENTS_PENDING
-  SUBMITTED
-  UNDER_REVIEW
-  APPROVED
-  REJECTED
-  SETTLED
-  CLOSED
-}
-
-enum TaskStatus {
-  PENDING
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
-enum Priority {
-  LOW
-  NORMAL
-  HIGH
-  URGENT
-}
-
-enum GrievanceStatus {
-  OPEN
-  IN_PROGRESS
-  ESCALATED
-  RESOLVED
-  CLOSED
-}
-
-enum OmbudsmanCaseStatus {
-  DRAFT
-  SUBMITTED
-  PENDING
-  HEARING
-  AWARD
-  CLOSED
-}
-
-enum CommunicationChannel {
-  PHONE
-  EMAIL
-  SMS
-  WHATSAPP
-  IN_PERSON
-  OTHER
-}
-
-enum CommunicationDirection {
-  INBOUND
-  OUTBOUND
 }

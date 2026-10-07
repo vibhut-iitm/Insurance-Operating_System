@@ -23,6 +23,10 @@ export class DocumentsService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  private serializeFileSize<T extends { fileSize: bigint }>(document: T) {
+    return { ...document, fileSize: Number(document.fileSize) };
+  }
+
   async list(query: PageQueryDto) {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 20, 100);
@@ -31,10 +35,10 @@ export class DocumentsService {
       ...(query.search ? { OR: [{ fileName: { contains: query.search, mode: 'insensitive' as const } }, { category: { contains: query.search, mode: 'insensitive' as const } }] } : {}),
     };
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.document.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' }, select: { id: true, fileName: true, fileType: true, fileSize: true, category: true, tags: true, expiryDate: true, reminderDate: true, customerId: true, policyId: true, claimId: true, uploadedById: true, createdAt: true, updatedAt: true } }),
+      this.prisma.document.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' }, select: { id: true, fileName: true, fileType: true, fileSize: true, category: true, expiryDate: true, reminderDate: true, customerId: true, policyId: true, claimId: true, uploadedById: true, createdAt: true, updatedAt: true } }),
       this.prisma.document.count({ where }),
     ]);
-    return { items, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return { items: items.map((item) => this.serializeFileSize(item)), meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
   }
 
   async upload(stream: Readable, contentType: string | undefined, contentLength: string | undefined, dto: DocumentUploadQueryDto, userId: string) {
@@ -89,7 +93,8 @@ export class DocumentsService {
           data: {
             fileName: originalName,
             fileType: mime,
-            fileSize,
+            fileSize: BigInt(fileSize),
+            storageProvider: 'LOCAL',
             storageKey,
             category: dto.category ?? 'OTHER',
             customerId,
@@ -103,7 +108,7 @@ export class DocumentsService {
         });
         await tx.auditLog.create({ data: { userId, action: 'DOCUMENT_UPLOADED', entity: 'document', entityId: row.id } });
         if (customerId) await tx.activity.create({ data: { userId, customerId, type: 'DOCUMENT_UPLOADED', description: `Uploaded ${originalName}` } });
-        return row;
+        return this.serializeFileSize(row);
       });
     } catch (error) {
       await rm(path, { force: true });
@@ -122,14 +127,14 @@ export class DocumentsService {
         expiryDate: expiryDate === undefined ? undefined : expiryDate ? new Date(expiryDate) : null,
         reminderDate: reminderDate === undefined ? undefined : reminderDate ? new Date(reminderDate) : null,
       },
-      select: { id: true, fileName: true, fileType: true, fileSize: true, category: true, tags: true, customerId: true, policyId: true, claimId: true, expiryDate: true, reminderDate: true, updatedAt: true },
+      select: { id: true, fileName: true, fileType: true, fileSize: true, category: true, customerId: true, policyId: true, claimId: true, expiryDate: true, reminderDate: true, updatedAt: true },
     });
     const writes: Prisma.PrismaPromise<unknown>[] = [
       this.prisma.auditLog.create({ data: { userId, action: 'DOCUMENT_UPDATED', entity: 'document', entityId: id } }),
     ];
     if (row.customerId) writes.push(this.prisma.activity.create({ data: { userId, customerId: row.customerId, type: 'DOCUMENT_UPDATED', description: `Updated document ${row.fileName}` } }));
     await this.prisma.$transaction(writes);
-    return row;
+    return this.serializeFileSize(row);
   }
 
   async archive(id: string, userId: string) {

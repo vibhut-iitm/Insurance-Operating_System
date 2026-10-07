@@ -41,3 +41,21 @@ export async function login(email: string, password: string): Promise<CurrentUse
 export async function logout(): Promise<void> {
   await fetch(`${API_URL}/auth/logout`, { method: "POST", credentials: "include" });
 }
+
+export async function submitPublicLead(input: {
+  fullName: string;
+  phone: string;
+  email?: string;
+  category: string;
+  requirement: string;
+}): Promise<void> {
+  const response = await fetch(`${API_URL}/public/leads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    if (response.status === 429) throw new Error("We have received several requests recently. Please wait a moment and try again.");
+    throw new Error("We could not send your enquiry. Please try again.");
+  }
+}

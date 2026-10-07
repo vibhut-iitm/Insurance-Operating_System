@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Nivara | Insurance Operations",
-  description: "A connected workspace for the complete insurance lifecycle.",
+  title: "Insurance-Operating_System | Sample Website",
+  description: "A sample insurance website for the Insurance-Operating_System project. Demo information only.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

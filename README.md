@@ -7,6 +7,9 @@ This repository contains the Next.js frontend in [`shuffal/`](./shuffal/), the
 NestJS REST API in [`conflict/`](./conflict/), and the full product brief in
 [`project doc/readme.md`](./project%20doc/readme.md).
 
+The public website is a sample/demo experience. It is not an insurance provider
+and does not offer real coverage. Use test details only in its enquiry form.
+
 ## Requirements
 
 - Node.js 20.11 or newer
@@ -25,23 +28,25 @@ never commit or share that file.
 
 ```powershell
 cd conflict
-npm install
+npm ci
 npm run prisma:generate
 npm run start:dev
 ```
 
-If your Supabase tables already exist, run `npm run prisma:pull` and review the
-resulting Prisma schema before starting the API. Only run
-`npm run prisma:migrate -- --name init` for a new, empty database. Use the
-development seed only for local/test data, never real customer data.
+The checked-in Prisma schema maps the existing Supabase tables. Generate the
+client with `npm run prisma:generate`. If you need to inspect the live schema,
+`npm run prisma:pull` writes a separate `conflict/prisma/introspected.prisma`
+file and does not replace the mapped schema. Do not run migrations against the
+existing database without reviewing the SQL and backing up its data.
 
 The API listens at `http://localhost:4000/api`, its health check is
 `http://localhost:4000/api/health`, and OpenAPI documentation is at
 `http://localhost:4000/api/docs` outside production.
 
-The development seed creates `admin@example.test`, `manager@example.test`, and
-`agent@example.test`, all with the development-only password `ChangeMe123!`.
-Never use the seed accounts or seed data in production.
+To create the first administrator, set `BOOTSTRAP_ADMIN_EMAIL`,
+`BOOTSTRAP_ADMIN_NAME`, and a unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 12
+characters in the PowerShell session, then run `npm run prisma:seed`. The seed
+does not create demo customers or change an existing user's password.
 
 ### 2. Configure and run the frontend
 
@@ -54,11 +59,11 @@ NEXT_PUBLIC_API_URL=http://localhost:4000/api
 
 ```powershell
 cd shuffal
-npm install
+npm ci
 npm run dev
 ```
 
-Open `http://localhost:3000`. Sign in with the seeded admin account above.
+Open `http://localhost:3000` and sign in with the administrator you bootstrapped.
 
 ## API capabilities
 

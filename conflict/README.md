@@ -21,22 +21,19 @@ PostgreSQL can be used instead of a local PostgreSQL server.
    npm run prisma:generate
    ```
 
-4. **If the Supabase tables already exist**, introspect them first:
+4. The checked-in Prisma schema maps the existing Supabase `snake_case` tables
+   and columns to the backend's TypeScript API. Generate the client with the
+   mapped schema:
 
    ```powershell
-   npm run prisma:pull
-   npm run build
+   npm run prisma:generate
    ```
 
-   Review the resulting `prisma/schema.prisma` before generating the client
-   again. Existing manually created `snake_case` tables may not match this
-   backend's original Prisma model/column names. Introspection maps the real
-   database; do not run `prisma:migrate` against an existing schema until the
-   Prisma schema has been reconciled with it.
-
-   For a brand-new, empty database instead, create a migration with
-   `npm run prisma:migrate -- --name init`. Do not run the development seed
-   against real customer data.
+   To inspect the live database without overwriting the mapped schema, use
+   `npm run prisma:pull`. It writes raw introspection to
+   `prisma/introspected.prisma`; review and merge changes into `schema.prisma`
+   deliberately. Do not run migrations against this existing database unless
+   you have reviewed the SQL diff and backed up the data.
 
 5. Start the API:
 
@@ -48,9 +45,13 @@ The API listens on `http://localhost:4000/api`. OpenAPI documentation is at
 `http://localhost:4000/api/docs` outside production. The frontend should use
 `NEXT_PUBLIC_API_URL=http://localhost:4000/api`.
 
-The development seed creates `admin@example.test`, `manager@example.test`,
-and `agent@example.test`; each uses the development-only password
-`ChangeMe123!`. Do not use the seed credentials or seed data in production.
+For a compiled deployment, run `npm run build` and then `npm start`.
+
+To create an initial administrator, set `BOOTSTRAP_ADMIN_EMAIL`,
+`BOOTSTRAP_ADMIN_NAME`, and a unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 12
+characters in the current PowerShell session, then run `npm run prisma:seed`.
+The seed only inserts the administrator if the email is not already present;
+it does not insert demo customers or change an existing user's password.
 
 ## API areas
 

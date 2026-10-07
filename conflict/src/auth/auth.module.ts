@@ -16,6 +16,6 @@ import { LoginRateLimitGuard } from './login-rate-limit.guard';
   } })],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard, RolesGuard, LoginRateLimitGuard],
-  exports: [AuthService, JwtAuthGuard, RolesGuard],
+  exports: [AuthService, JwtAuthGuard, RolesGuard, JwtModule],
 })
 export class AuthModule {}

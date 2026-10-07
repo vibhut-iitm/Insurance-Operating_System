@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ClaimStatus, LeadStatus, PolicyStatus, RenewalStatus, TaskStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClaimStatus, LeadStatus, PolicyStatus, RenewalStatus, TaskStatus } from '../common/domain.enums';
 
 @Injectable()
 export class DashboardService {
@@ -26,7 +26,7 @@ export class DashboardService {
       this.prisma.claim.count({ where: { status: { notIn: [ClaimStatus.CLOSED, ClaimStatus.REJECTED, ClaimStatus.SETTLED] } } }),
       this.prisma.task.count({ where: { dueDate: { lt: now }, status: { in: [TaskStatus.PENDING, TaskStatus.IN_PROGRESS] } } }),
       this.prisma.task.findMany({ where: { status: { in: [TaskStatus.PENDING, TaskStatus.IN_PROGRESS] } }, orderBy: { dueDate: 'asc' }, take: 8, select: { id: true, title: true, dueDate: true, priority: true, status: true, customer: { select: { id: true, fullName: true } } } }),
-      this.prisma.renewal.findMany({ where: { status: { in: [RenewalStatus.UPCOMING, RenewalStatus.DUE, RenewalStatus.OVERDUE] } }, orderBy: { renewalDate: 'asc' }, take: 8, select: { id: true, renewalDate: true, status: true, policy: { select: { policyNumber: true } }, customer: { select: { id: true, fullName: true } } } }),
+      this.prisma.renewal.findMany({ where: { status: { in: [RenewalStatus.UPCOMING, RenewalStatus.DUE, RenewalStatus.OVERDUE] } }, orderBy: { renewalDate: 'asc' }, take: 8, select: { id: true, renewalDate: true, status: true, policy: { select: { policyNumber: true, customer: { select: { id: true, fullName: true } } } } } }),
       this.prisma.lead.findMany({ orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, source: true, status: true, priority: true, createdAt: true, customer: { select: { id: true, fullName: true } } } }),
       this.prisma.claim.findMany({ where: { status: { notIn: [ClaimStatus.CLOSED, ClaimStatus.REJECTED, ClaimStatus.SETTLED] } }, orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, claimNumber: true, status: true, amount: true, customer: { select: { id: true, fullName: true } } } }),
       this.prisma.activity.findMany({ orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, type: true, description: true, createdAt: true, customer: { select: { id: true, fullName: true } } } }),

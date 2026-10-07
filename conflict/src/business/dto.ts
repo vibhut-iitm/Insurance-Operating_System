@@ -1,13 +1,13 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { Type } from 'class-transformer';
+import { Prisma } from '@prisma/client';
 import {
   ClaimStatus, CommunicationChannel, CommunicationDirection, GrievanceStatus,
   LeadStatus, OmbudsmanCaseStatus, PolicyStatus, Priority, QuoteStatus, RenewalStatus,
   TaskStatus,
-} from '@prisma/client';
-import { Prisma } from '@prisma/client';
+} from '../common/domain.enums';
 import {
-  IsArray, IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsObject, IsOptional,
+  IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsObject, IsOptional,
   IsEmail, IsString, IsUUID, Length, Matches, Min,
 } from 'class-validator';
 
@@ -115,7 +115,6 @@ export class TaskDto {
   @IsOptional() @IsUUID() policyId?: string;
   @IsOptional() @IsUUID() leadId?: string;
   @IsOptional() @IsUUID() claimId?: string;
-  @IsOptional() @IsString() relatedEntity?: string;
   @IsOptional() @IsEnum(Priority) priority?: Priority;
   @IsDateString() dueDate!: string;
   @IsOptional() @IsEnum(TaskStatus) status?: TaskStatus;
@@ -128,7 +127,7 @@ export class GrievanceDto {
   @IsString() @Length(2, 100) category!: string;
   @IsString() @Length(2, 5000) description!: string;
   @IsOptional() @IsEnum(GrievanceStatus) status?: GrievanceStatus;
-  @IsOptional() @IsDateString() complaintDate?: string;
+  @IsDateString() complaintDate!: string;
   @IsOptional() @IsDateString() escalationDate?: string;
   @IsOptional() @IsDateString() followUpDeadline?: string;
   @IsOptional() @IsString() companyResponse?: string;
@@ -151,10 +150,8 @@ export class UpdateOmbudsmanCaseDto extends PartialType(OmbudsmanCaseDto) {}
 
 export class CommunicationDto {
   @IsUUID() customerId!: string;
-  @IsOptional() @IsUUID() grievanceId?: string;
-  @IsOptional() @IsUUID() ombudsmanCaseId?: string;
   @IsEnum(CommunicationChannel) channel!: CommunicationChannel;
-  @IsOptional() @IsEnum(CommunicationDirection) direction?: CommunicationDirection;
+  @IsEnum(CommunicationDirection) direction!: CommunicationDirection;
   @IsOptional() @IsString() subject?: string;
   @IsString() @Length(1, 10000) body!: string;
   @IsOptional() @IsString() status?: string;
@@ -194,7 +191,6 @@ export class DocumentUploadQueryDto {
 export class UpdateDocumentDto {
   @IsOptional() @IsString() @Length(1, 255) fileName?: string;
   @IsOptional() @IsString() @Length(1, 80) category?: string;
-  @IsOptional() @IsArray() @IsString({ each: true }) tags?: string[];
   @IsOptional() @IsDateString() expiryDate?: string;
   @IsOptional() @IsDateString() reminderDate?: string;
 }

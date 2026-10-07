@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../auth/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { RoleName } from '@prisma/client';
+import { RoleName } from '../common/domain.enums';
 import { UserRequest } from './request.types';
 import { BusinessService } from './business.service';
 import {

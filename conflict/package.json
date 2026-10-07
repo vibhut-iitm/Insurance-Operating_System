@@ -5,11 +5,11 @@
   "scripts": {
     "build": "nest build",
     "start:dev": "nest start --watch",
-    "start": "node dist/main",
+    "start": "node dist/src/main.js",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
-    "prisma:pull": "prisma db pull",
+    "prisma:pull": "prisma db pull --schema prisma/introspected.prisma",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts"
   },

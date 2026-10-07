@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ClaimDto, CommunicationDto, FamilyMemberDto, GrievanceDto, LeadDto,
@@ -16,6 +17,17 @@ type Audited = { id: string; customerId?: string | null };
 @Injectable()
 export class BusinessService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async resolveCategory(tx: Pick<Prisma.TransactionClient, 'insuranceCategory'>, name: string) {
+    const normalized = name.trim();
+    const existing = await tx.insuranceCategory.findFirst({
+      where: { name: { equals: normalized, mode: 'insensitive' } },
+    });
+    if (existing) return existing;
+    const slug = normalized.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!slug) throw new BadRequestException('A valid insurance category is required');
+    return tx.insuranceCategory.create({ data: { name: normalized, slug: `${slug}-${randomUUID().slice(0, 8)}` } });
+  }
 
   private async page<T>(items: Prisma.PrismaPromise<T[]>, count: Prisma.PrismaPromise<number>, query: Page) {
     const page = query.page ?? 1;
@@ -38,9 +50,9 @@ export class BusinessService {
 
   async listProducts(query: Page) {
     const where: Prisma.InsuranceProductWhereInput = query.search
-      ? { OR: [{ name: { contains: query.search, mode: 'insensitive' } }, { insurer: { contains: query.search, mode: 'insensitive' } }, { category: { contains: query.search, mode: 'insensitive' } }] }
+      ? { OR: [{ name: { contains: query.search, mode: 'insensitive' } }, { insurer: { is: { name: { contains: query.search, mode: 'insensitive' } } } }, { category: { is: { name: { contains: query.search, mode: 'insensitive' } } } }] }
       : {};
-    return this.page(this.prisma.insuranceProduct.findMany({ where, skip: ((query.page ?? 1) - 1) * Math.min(query.limit ?? 20, 100), take: Math.min(query.limit ?? 20, 100), orderBy: { name: 'asc' } }), this.prisma.insuranceProduct.count({ where }), query);
+    return this.page(this.prisma.insuranceProduct.findMany({ where, skip: ((query.page ?? 1) - 1) * Math.min(query.limit ?? 20, 100), take: Math.min(query.limit ?? 20, 100), orderBy: { name: 'asc' }, include: { insurer: true, category: true } }), this.prisma.insuranceProduct.count({ where }), query);
   }
 
   async getProduct(id: string) {
@@ -50,14 +62,32 @@ export class BusinessService {
   }
 
   async createProduct(dto: ProductDto, userId: string) {
-    const row = await this.prisma.insuranceProduct.create({ data: dto });
+    const row = await this.prisma.$transaction(async (tx) => {
+      const insurer = await tx.insurer.upsert({ where: { name: dto.insurer.trim() }, update: {}, create: { name: dto.insurer.trim() } });
+      const category = await this.resolveCategory(tx, dto.category);
+      return tx.insuranceProduct.create({
+        data: { name: dto.name, description: dto.description, isActive: dto.isActive, insurerId: insurer.id, categoryId: category.id },
+        include: { insurer: true, category: true },
+      });
+    });
     await this.track(userId, 'product', 'PRODUCT_CREATED', row, 'Insurance product created');
     return row;
   }
 
   async updateProduct(id: string, dto: UpdateProductDto, userId: string) {
     await this.getProduct(id);
-    const row = await this.prisma.insuranceProduct.update({ where: { id }, data: dto });
+    const { insurer: insurerName, category: categoryName, ...fields } = dto;
+    const row = await this.prisma.$transaction(async (tx) => {
+      const insurer = insurerName
+        ? await tx.insurer.upsert({ where: { name: insurerName.trim() }, update: {}, create: { name: insurerName.trim() } })
+        : undefined;
+      const category = categoryName ? await this.resolveCategory(tx, categoryName) : undefined;
+      return tx.insuranceProduct.update({
+        where: { id },
+        data: { ...fields, insurerId: insurer?.id, categoryId: category?.id },
+        include: { insurer: true, category: true },
+      });
+    });
     await this.track(userId, 'product', 'PRODUCT_UPDATED', row, 'Insurance product updated');
     return row;
   }
@@ -77,7 +107,11 @@ export class BusinessService {
   }
 
   async createLead(dto: LeadDto, userId: string) {
-    const row = await this.prisma.lead.create({ data: { ...dto, followUpDate: dto.followUpDate ? new Date(dto.followUpDate) : undefined } });
+    const { category, followUpDate, ...fields } = dto;
+    const row = await this.prisma.$transaction(async (tx) => {
+      const insuranceCategory = category ? await this.resolveCategory(tx, category) : undefined;
+      return tx.lead.create({ data: { ...fields, categoryId: insuranceCategory?.id, followUpDate: followUpDate ? new Date(followUpDate) : undefined } });
+    });
     await this.track(userId, 'lead', 'LEAD_CREATED', row, 'Lead created');
     return row;
   }
@@ -91,8 +125,9 @@ export class BusinessService {
       const customer = existing
         ? await tx.customer.update({ where: { id: existing.id }, data: { email: existing.email ?? dto.email } })
         : await tx.customer.create({ data: { fullName: dto.fullName, phone, email: dto.email } });
+      const category = await this.resolveCategory(tx, dto.category);
       const lead = await tx.lead.create({
-        data: { customerId: customer.id, source: 'Website', category: dto.category, requirement: dto.requirement },
+        data: { customerId: customer.id, source: 'Website', categoryId: category.id, requirement: dto.requirement },
       });
       await tx.task.create({
         data: {
@@ -100,7 +135,6 @@ export class BusinessService {
           description: `Review new website enquiry for ${dto.category}`,
           customerId: customer.id,
           leadId: lead.id,
-          relatedEntity: lead.id,
           dueDate,
         },
       });
@@ -116,21 +150,31 @@ export class BusinessService {
 
   async updateLead(id: string, dto: UpdateLeadDto, userId: string) {
     const current = await this.getLead(id);
-    const row = await this.prisma.lead.update({ where: { id }, data: { ...dto, followUpDate: dto.followUpDate === undefined ? undefined : dto.followUpDate ? new Date(dto.followUpDate) : null } });
+    const { category, followUpDate, ...fields } = dto;
+    const row = await this.prisma.$transaction(async (tx) => {
+      const insuranceCategory = category ? await this.resolveCategory(tx, category) : undefined;
+      return tx.lead.update({ where: { id }, data: { ...fields, categoryId: insuranceCategory?.id, followUpDate: followUpDate === undefined ? undefined : followUpDate ? new Date(followUpDate) : null } });
+    });
     await this.track(userId, 'lead', 'LEAD_UPDATED', row, 'Lead updated');
     return { ...row, customerId: current.customerId };
   }
 
   async listQuotes(query: Page) {
+    const insurerProducts = query.search
+      ? await this.prisma.insuranceProduct.findMany({
+          where: { insurer: { is: { name: { contains: query.search, mode: 'insensitive' } } } },
+          select: { id: true },
+        })
+      : [];
     const where: Prisma.QuoteWhereInput = query.search
-      ? { OR: [{ insurer: { contains: query.search, mode: 'insensitive' } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] }
+      ? { OR: [{ productId: { in: insurerProducts.map((product) => product.id) } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] }
       : {};
     const take = Math.min(query.limit ?? 20, 100);
-    return this.page(this.prisma.quote.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { createdAt: 'desc' }, include: { customer: true, product: true, lead: true, acceptedPolicy: true } }), this.prisma.quote.count({ where }), query);
+    return this.page(this.prisma.quote.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { createdAt: 'desc' }, include: { customer: true, product: { include: { insurer: true, category: true } }, lead: true, policies: { take: 1 } } }), this.prisma.quote.count({ where }), query);
   }
 
   async getQuote(id: string) {
-    const row = await this.prisma.quote.findUnique({ where: { id }, include: { customer: true, product: true, lead: true, acceptedPolicy: true } });
+    const row = await this.prisma.quote.findUnique({ where: { id }, include: { customer: true, product: { include: { insurer: true, category: true } }, lead: true, policies: { take: 1 } } });
     if (!row) throw new NotFoundException('Quote not found');
     return row;
   }
@@ -141,21 +185,32 @@ export class BusinessService {
       if (!lead) throw new NotFoundException('Lead not found');
       if (lead.customerId !== dto.customerId) throw new BadRequestException('The selected lead does not belong to the selected customer');
     }
-    const row = await this.prisma.quote.create({ data: { ...dto, validityDate: dto.validityDate ? new Date(dto.validityDate) : undefined } });
+    const product = await this.prisma.insuranceProduct.findUnique({ where: { id: dto.productId }, select: { insurer: { select: { name: true } } } });
+    if (!product) throw new NotFoundException('Product not found');
+    if (product.insurer.name.toLowerCase() !== dto.insurer.trim().toLowerCase()) throw new BadRequestException('The selected insurer does not match the selected product');
+    const { insurer: _insurer, coverage, validityDate, ...fields } = dto;
+    const row = await this.prisma.quote.create({ data: { ...fields, coverage: coverage ? { summary: coverage } : undefined, validityDate: validityDate ? new Date(validityDate) : undefined } });
     await this.track(userId, 'quote', 'QUOTE_CREATED', row, 'Quote created');
     return row;
   }
 
   async updateQuote(id: string, dto: UpdateQuoteDto, userId: string) {
     const current = await this.getQuote(id);
-    const row = await this.prisma.quote.update({ where: { id }, data: { ...dto, validityDate: dto.validityDate === undefined ? undefined : dto.validityDate ? new Date(dto.validityDate) : null } });
+    const { insurer, coverage, validityDate, ...fields } = dto;
+    const productId = dto.productId ?? current.productId;
+    if (insurer) {
+      const product = await this.prisma.insuranceProduct.findUnique({ where: { id: productId }, select: { insurer: { select: { name: true } } } });
+      if (!product) throw new NotFoundException('Product not found');
+      if (product.insurer.name.toLowerCase() !== insurer.trim().toLowerCase()) throw new BadRequestException('The selected insurer does not match the selected product');
+    }
+    const row = await this.prisma.quote.update({ where: { id }, data: { ...fields, coverage: coverage === undefined ? undefined : coverage ? { summary: coverage } : Prisma.JsonNull, validityDate: validityDate === undefined ? undefined : validityDate ? new Date(validityDate) : null } });
     await this.track(userId, 'quote', 'QUOTE_UPDATED', { ...row, customerId: current.customerId }, 'Quote updated');
     return row;
   }
 
   async acceptQuote(id: string, policyNumber: string, userId: string) {
     const quote = await this.getQuote(id);
-    if (quote.acceptedPolicy) return quote.acceptedPolicy;
+    if (quote.policies[0]) return quote.policies[0];
     const today = new Date();
     const endDate = new Date(today);
     endDate.setFullYear(endDate.getFullYear() + 1);
@@ -165,7 +220,8 @@ export class BusinessService {
         productId: quote.productId,
         quoteId: quote.id,
         policyNumber,
-        policyType: quote.coverage ?? quote.product.category,
+        policyType: quote.product.category.name,
+        insurerId: quote.product.insurerId,
         startDate: today,
         endDate,
         premium: quote.premium,
@@ -175,7 +231,7 @@ export class BusinessService {
       if (quote.leadId) await tx.lead.update({ where: { id: quote.leadId }, data: { status: 'WON' } });
       const reminderDate = new Date(endDate);
       reminderDate.setDate(reminderDate.getDate() - 30);
-      await tx.renewal.create({ data: { policyId: created.id, customerId: created.customerId, renewalDate: endDate, reminderDate } });
+      await tx.renewal.create({ data: { policyId: created.id, renewalNumber: 1, renewalDate: endDate, reminderDate } });
       return created;
     });
     await this.track(userId, 'policy', 'POLICY_ISSUED', { ...policy, customerId: quote.customerId }, 'Quote accepted and policy issued');
@@ -203,12 +259,14 @@ export class BusinessService {
       if (!quote) throw new NotFoundException('Quote not found');
       if (quote.customerId !== dto.customerId) throw new BadRequestException('The selected quote does not belong to the selected customer');
     }
+    const product = await this.prisma.insuranceProduct.findUnique({ where: { id: dto.productId }, select: { insurerId: true } });
+    if (!product) throw new NotFoundException('Product not found');
     const endDate = new Date(dto.endDate);
     const reminderDate = new Date(endDate);
     reminderDate.setDate(reminderDate.getDate() - 30);
     const row = await this.prisma.$transaction(async (tx) => {
-      const policy = await tx.policy.create({ data: { ...dto, startDate: new Date(dto.startDate), endDate } });
-      await tx.renewal.create({ data: { policyId: policy.id, customerId: policy.customerId, renewalDate: endDate, reminderDate } });
+      const policy = await tx.policy.create({ data: { ...dto, insurerId: product.insurerId, startDate: new Date(dto.startDate), endDate } });
+      await tx.renewal.create({ data: { policyId: policy.id, renewalNumber: 1, renewalDate: endDate, reminderDate } });
       return policy;
     });
     await this.track(userId, 'policy', 'POLICY_CREATED', row, 'Policy created');
@@ -235,14 +293,14 @@ export class BusinessService {
 
   async listRenewals(query: Page) {
     const where: Prisma.RenewalWhereInput = query.search
-      ? { OR: [{ policy: { policyNumber: { contains: query.search, mode: 'insensitive' } } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] }
+      ? { OR: [{ policy: { policyNumber: { contains: query.search, mode: 'insensitive' } } }, { policy: { customer: { fullName: { contains: query.search, mode: 'insensitive' } } } }] }
       : {};
     const take = Math.min(query.limit ?? 20, 100);
-    return this.page(this.prisma.renewal.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { renewalDate: 'asc' }, include: { customer: true, policy: { include: { product: true } }, assignedUser: { select: { id: true, name: true } } } }), this.prisma.renewal.count({ where }), query);
+    return this.page(this.prisma.renewal.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { renewalDate: 'asc' }, include: { policy: { include: { customer: true, product: true } }, assignedUser: { select: { id: true, name: true } } } }), this.prisma.renewal.count({ where }), query);
   }
 
   async getRenewal(id: string) {
-    const row = await this.prisma.renewal.findUnique({ where: { id }, include: { customer: true, policy: true, assignedUser: { select: { id: true, name: true } } } });
+    const row = await this.prisma.renewal.findUnique({ where: { id }, include: { policy: true, assignedUser: { select: { id: true, name: true } } } });
     if (!row) throw new NotFoundException('Renewal not found');
     return row;
   }
@@ -251,14 +309,19 @@ export class BusinessService {
     const policy = await this.prisma.policy.findUnique({ where: { id: dto.policyId }, select: { customerId: true } });
     if (!policy) throw new NotFoundException('Policy not found');
     if (policy.customerId !== dto.customerId) throw new BadRequestException('The selected policy does not belong to the selected customer');
-    const row = await this.prisma.renewal.create({ data: { ...dto, renewalDate: new Date(dto.renewalDate), reminderDate: dto.reminderDate ? new Date(dto.reminderDate) : undefined } });
+    const row = await this.prisma.$transaction(async (tx) => {
+      const latest = await tx.renewal.aggregate({ where: { policyId: dto.policyId }, _max: { renewalNumber: true } });
+      const { customerId: _customerId, ...fields } = dto;
+      return tx.renewal.create({ data: { ...fields, renewalNumber: (latest._max.renewalNumber ?? 0) + 1, renewalDate: new Date(dto.renewalDate), reminderDate: dto.reminderDate ? new Date(dto.reminderDate) : undefined } });
+    });
     await this.track(userId, 'renewal', 'RENEWAL_CREATED', row, 'Renewal created');
     return row;
   }
 
   async updateRenewal(id: string, dto: UpdateRenewalDto, userId: string) {
     await this.getRenewal(id);
-    const row = await this.prisma.renewal.update({ where: { id }, data: { ...dto, renewalDate: dto.renewalDate ? new Date(dto.renewalDate) : undefined, reminderDate: dto.reminderDate === undefined ? undefined : dto.reminderDate ? new Date(dto.reminderDate) : null } });
+    const { customerId: _customerId, ...fields } = dto;
+    const row = await this.prisma.renewal.update({ where: { id }, data: { ...fields, renewalDate: dto.renewalDate ? new Date(dto.renewalDate) : undefined, reminderDate: dto.reminderDate === undefined ? undefined : dto.reminderDate ? new Date(dto.reminderDate) : null } });
     await this.track(userId, 'renewal', 'RENEWAL_UPDATED', row, 'Renewal updated');
     return row;
   }
@@ -281,16 +344,16 @@ export class BusinessService {
     const policy = await this.prisma.policy.findUnique({ where: { id: dto.policyId }, select: { customerId: true } });
     if (!policy) throw new NotFoundException('Policy not found');
     if (policy.customerId !== dto.customerId) throw new BadRequestException('The selected policy does not belong to the selected customer');
-    const { incidentDate, claimDate, admissionDate, dischargeDate, ...fields } = dto;
-    const row = await this.prisma.claim.create({ data: { ...fields, incidentDate: incidentDate ? new Date(incidentDate) : undefined, claimDate: claimDate ? new Date(claimDate) : undefined, admissionDate: admissionDate ? new Date(admissionDate) : undefined, dischargeDate: dischargeDate ? new Date(dischargeDate) : undefined } });
+    const { incidentDate, claimDate, admissionDate, dischargeDate, hospital, insuredPerson: _insuredPerson, ...fields } = dto;
+    const row = await this.prisma.claim.create({ data: { ...fields, hospitalOrProvider: hospital, incidentDate: incidentDate ? new Date(incidentDate) : undefined, claimDate: claimDate ? new Date(claimDate) : undefined, admissionDate: admissionDate ? new Date(admissionDate) : undefined, dischargeDate: dischargeDate ? new Date(dischargeDate) : undefined } });
     await this.track(userId, 'claim', 'CLAIM_CREATED', row, 'Claim created');
     return row;
   }
 
   async updateClaim(id: string, dto: UpdateClaimDto, userId: string) {
     const current = await this.getClaim(id);
-    const { incidentDate, claimDate, admissionDate, dischargeDate, ...fields } = dto;
-    const row = await this.prisma.claim.update({ where: { id }, data: { ...fields, incidentDate: incidentDate === undefined ? undefined : incidentDate ? new Date(incidentDate) : null, claimDate: claimDate ? new Date(claimDate) : undefined, admissionDate: admissionDate === undefined ? undefined : admissionDate ? new Date(admissionDate) : null, dischargeDate: dischargeDate === undefined ? undefined : dischargeDate ? new Date(dischargeDate) : null } });
+    const { incidentDate, claimDate, admissionDate, dischargeDate, hospital, insuredPerson: _insuredPerson, ...fields } = dto;
+    const row = await this.prisma.claim.update({ where: { id }, data: { ...fields, hospitalOrProvider: hospital, incidentDate: incidentDate === undefined ? undefined : incidentDate ? new Date(incidentDate) : null, claimDate: claimDate ? new Date(claimDate) : undefined, admissionDate: admissionDate === undefined ? undefined : admissionDate ? new Date(admissionDate) : null, dischargeDate: dischargeDate === undefined ? undefined : dischargeDate ? new Date(dischargeDate) : null } });
     await this.track(userId, 'claim', 'CLAIM_UPDATED', { ...row, customerId: current.customerId }, 'Claim updated');
     return row;
   }
@@ -354,27 +417,41 @@ export class BusinessService {
   async listPolicyMembers(query: Page) {
     const where: Prisma.PolicyMemberWhereInput = { isArchived: false, ...(query.search ? { fullName: { contains: query.search, mode: 'insensitive' as const } } : {}) };
     const take = Math.min(query.limit ?? 20, 100);
-    return this.page(this.prisma.policyMember.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { fullName: 'asc' }, include: { policy: true, customer: true } }), this.prisma.policyMember.count({ where }), query);
+    return this.page(this.prisma.policyMember.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { fullName: 'asc' }, include: { policy: true, familyMember: true } }), this.prisma.policyMember.count({ where }), query);
   }
   async createPolicyMember(dto: PolicyMemberDto, userId: string) {
-    const row = await this.prisma.policyMember.create({ data: { ...dto, dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined } });
-    await this.track(userId, 'policy-member', 'POLICY_MEMBER_CREATED', row, 'Insured member added to policy');
+    const policy = await this.prisma.policy.findUnique({ where: { id: dto.policyId }, select: { customerId: true } });
+    if (!policy) throw new NotFoundException('Policy not found');
+    if (policy.customerId !== dto.customerId) throw new BadRequestException('The selected policy does not belong to the selected customer');
+    const { customerId, dateOfBirth, ...fields } = dto;
+    const familyMember = await this.prisma.familyMember.findFirst({ where: { customerId, fullName: dto.fullName, isArchived: false }, select: { id: true } });
+    const row = await this.prisma.policyMember.create({ data: { ...fields, familyMemberId: familyMember?.id, dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined } });
+    await this.track(userId, 'policy-member', 'POLICY_MEMBER_CREATED', { ...row, customerId }, 'Insured member added to policy');
     return row;
   }
   async updatePolicyMember(id: string, dto: UpdatePolicyMemberDto, userId: string) {
-    const current = await this.prisma.policyMember.findUnique({ where: { id } });
+    const current = await this.prisma.policyMember.findUnique({ where: { id }, include: { policy: { select: { customerId: true } } } });
     if (!current) throw new NotFoundException('Policy member not found');
-    const row = await this.prisma.policyMember.update({ where: { id }, data: { ...dto, dateOfBirth: dto.dateOfBirth === undefined ? undefined : dto.dateOfBirth ? new Date(dto.dateOfBirth) : null } });
-    await this.track(userId, 'policy-member', 'POLICY_MEMBER_UPDATED', row, 'Insured member updated');
+    const { customerId, dateOfBirth, ...fields } = dto;
+    const policy = dto.policyId
+      ? await this.prisma.policy.findUnique({ where: { id: dto.policyId }, select: { customerId: true } })
+      : current.policy;
+    if (!policy) throw new NotFoundException('Policy not found');
+    if (customerId && policy.customerId !== customerId) throw new BadRequestException('The selected policy does not belong to the selected customer');
+    const familyMember = customerId && dto.fullName
+      ? await this.prisma.familyMember.findFirst({ where: { customerId, fullName: dto.fullName, isArchived: false }, select: { id: true } })
+      : undefined;
+    const row = await this.prisma.policyMember.update({ where: { id }, data: { ...fields, familyMemberId: familyMember?.id, dateOfBirth: dateOfBirth === undefined ? undefined : dateOfBirth ? new Date(dateOfBirth) : null } });
+    await this.track(userId, 'policy-member', 'POLICY_MEMBER_UPDATED', { ...row, customerId: policy.customerId }, 'Insured member updated');
     return row;
   }
   async removePolicyMember(id: string, userId: string) {
-    const current = await this.prisma.policyMember.findUnique({ where: { id } });
+    const current = await this.prisma.policyMember.findUnique({ where: { id }, include: { policy: { select: { customerId: true } } } });
     if (!current) throw new NotFoundException('Policy member not found');
     await this.prisma.$transaction([
       this.prisma.policyMember.update({ where: { id }, data: { isArchived: true } }),
       this.prisma.auditLog.create({ data: { userId, action: 'POLICY_MEMBER_REMOVED', entity: 'policy-member', entityId: id } }),
-      this.prisma.activity.create({ data: { userId, customerId: current.customerId, type: 'POLICY_MEMBER_REMOVED', description: `Insured member ${current.fullName} removed` } }),
+      this.prisma.activity.create({ data: { userId, customerId: current.policy.customerId, type: 'POLICY_MEMBER_REMOVED', description: `Insured member ${current.fullName} removed` } }),
     ]);
     return { success: true };
   }
@@ -382,16 +459,16 @@ export class BusinessService {
   async listGrievances(query: Page) {
     const where: Prisma.GrievanceWhereInput = query.search ? { OR: [{ referenceNumber: { contains: query.search, mode: 'insensitive' } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] } : {};
     const take = Math.min(query.limit ?? 20, 100);
-    return this.page(this.prisma.grievance.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { followUpDeadline: 'asc' }, include: { customer: true, ombudsmanCases: true, communications: true } }), this.prisma.grievance.count({ where }), query);
+    return this.page(this.prisma.grievance.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { followUpDeadline: 'asc' }, include: { customer: true, ombudsmanCases: true } }), this.prisma.grievance.count({ where }), query);
   }
   async getGrievance(id: string) {
-    const row = await this.prisma.grievance.findUnique({ where: { id }, include: { customer: true, ombudsmanCases: true, communications: true } });
+    const row = await this.prisma.grievance.findUnique({ where: { id }, include: { customer: true, ombudsmanCases: true } });
     if (!row) throw new NotFoundException('Grievance not found');
     return row;
   }
   async createGrievance(dto: GrievanceDto, userId: string) {
     const { complaintDate, escalationDate, followUpDeadline, resolvedAt, ...fields } = dto;
-    const row = await this.prisma.grievance.create({ data: { ...fields, complaintDate: complaintDate ? new Date(complaintDate) : undefined, escalationDate: escalationDate ? new Date(escalationDate) : undefined, followUpDeadline: followUpDeadline ? new Date(followUpDeadline) : undefined, resolvedAt: resolvedAt ? new Date(resolvedAt) : undefined } });
+    const row = await this.prisma.grievance.create({ data: { ...fields, complaintDate: new Date(complaintDate), escalationDate: escalationDate ? new Date(escalationDate) : undefined, followUpDeadline: followUpDeadline ? new Date(followUpDeadline) : undefined, resolvedAt: resolvedAt ? new Date(resolvedAt) : undefined } });
     await this.track(userId, 'grievance', 'GRIEVANCE_CREATED', row, 'Grievance recorded');
     return row;
   }
@@ -406,10 +483,10 @@ export class BusinessService {
   async listOmbudsmanCases(query: Page) {
     const where: Prisma.OmbudsmanCaseWhereInput = query.search ? { OR: [{ caseNumber: { contains: query.search, mode: 'insensitive' } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] } : {};
     const take = Math.min(query.limit ?? 20, 100);
-    return this.page(this.prisma.ombudsmanCase.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { deadline: 'asc' }, include: { customer: true, grievance: true, communications: true } }), this.prisma.ombudsmanCase.count({ where }), query);
+    return this.page(this.prisma.ombudsmanCase.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { deadline: 'asc' }, include: { customer: true, grievance: true } }), this.prisma.ombudsmanCase.count({ where }), query);
   }
   async getOmbudsmanCase(id: string) {
-    const row = await this.prisma.ombudsmanCase.findUnique({ where: { id }, include: { customer: true, grievance: true, communications: true } });
+    const row = await this.prisma.ombudsmanCase.findUnique({ where: { id }, include: { customer: true, grievance: true } });
     if (!row) throw new NotFoundException('Ombudsman case not found');
     return row;
   }
@@ -430,7 +507,7 @@ export class BusinessService {
   async listCommunications(query: Page) {
     const where: Prisma.CommunicationWhereInput = query.search ? { OR: [{ subject: { contains: query.search, mode: 'insensitive' } }, { body: { contains: query.search, mode: 'insensitive' } }, { customer: { fullName: { contains: query.search, mode: 'insensitive' } } }] } : {};
     const take = Math.min(query.limit ?? 20, 100);
-    return this.page(this.prisma.communication.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { occurredAt: 'desc' }, include: { customer: true, grievance: true, ombudsmanCase: true } }), this.prisma.communication.count({ where }), query);
+    return this.page(this.prisma.communication.findMany({ where, skip: ((query.page ?? 1) - 1) * take, take, orderBy: { occurredAt: 'desc' }, include: { customer: true } }), this.prisma.communication.count({ where }), query);
   }
   async createCommunication(dto: CommunicationDto, userId: string) {
     const { occurredAt, ...fields } = dto;
@@ -500,7 +577,7 @@ export class BusinessService {
       this.prisma.claim.count({ where: { status: { notIn: ['CLOSED', 'REJECTED', 'SETTLED'] } } }),
       this.prisma.task.count({ where: { dueDate: { lt: now }, status: { in: ['PENDING', 'IN_PROGRESS'] } } }),
       this.prisma.task.findMany({ where: { status: { in: ['PENDING', 'IN_PROGRESS'] } }, orderBy: { dueDate: 'asc' }, take: 8, select: { id: true, title: true, dueDate: true, priority: true, status: true, customer: { select: { id: true, fullName: true } } } }),
-      this.prisma.renewal.findMany({ where: { status: { in: ['UPCOMING', 'DUE', 'OVERDUE'] } }, orderBy: { renewalDate: 'asc' }, take: 8, select: { id: true, renewalDate: true, status: true, policy: { select: { policyNumber: true } }, customer: { select: { id: true, fullName: true } } } }),
+      this.prisma.renewal.findMany({ where: { status: { in: ['UPCOMING', 'DUE', 'OVERDUE'] } }, orderBy: { renewalDate: 'asc' }, take: 8, select: { id: true, renewalDate: true, status: true, policy: { select: { policyNumber: true, customer: { select: { id: true, fullName: true } } } } } }),
       this.prisma.lead.findMany({ orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, source: true, status: true, priority: true, createdAt: true, customer: { select: { id: true, fullName: true } } } }),
       this.prisma.claim.findMany({ where: { status: { notIn: ['CLOSED', 'REJECTED', 'SETTLED'] } }, orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, claimNumber: true, status: true, amount: true, customer: { select: { id: true, fullName: true } } } }),
       this.prisma.activity.findMany({ orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, type: true, description: true, createdAt: true, customer: { select: { id: true, fullName: true } } } }),

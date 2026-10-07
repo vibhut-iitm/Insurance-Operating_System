@@ -40,7 +40,7 @@ export class CustomersService {
       grievances: { orderBy: { createdAt: 'desc' }, take: 20 },
       ombudsmanCases: { orderBy: { createdAt: 'desc' }, take: 20 },
       communications: { orderBy: { occurredAt: 'desc' }, take: 20 },
-      documents: { where: { isArchived: false }, orderBy: { createdAt: 'desc' }, take: 20, select: { id: true, fileName: true, fileType: true, fileSize: true, category: true, tags: true, expiryDate: true, reminderDate: true, createdAt: true } },
+      documents: { where: { isArchived: false }, orderBy: { createdAt: 'desc' }, take: 20, select: { id: true, fileName: true, fileType: true, fileSize: true, category: true, expiryDate: true, reminderDate: true, createdAt: true } },
       tasks: { orderBy: { dueDate: 'asc' }, take: 20 },
       activities: { orderBy: { createdAt: 'desc' }, take: 50 },
     } });
