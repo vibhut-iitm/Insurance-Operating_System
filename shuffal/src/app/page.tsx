@@ -180,7 +180,7 @@ export default function Home() {
         <div className="enquiry-intro">
           <p className="eyebrow">A good place to begin</p>
           <h2>Tell us what you are <em>thinking about.</em></h2>
-          <p>This form demonstrates the enquiry flow and sends submissions to the connected demo backend.</p>
+          <p>This sample form demonstrates an enquiry flow. Submissions require a connected backend, which may not be enabled in this deployment.</p>
           <div className="enquiry-aside"><span className="aside-icon"><LineIcon name="life" /></span><span>Use test details only. Do not enter real personal information.</span></div>
         </div>
         <form className="enquiry-form" onSubmit={handleEnquiry}>

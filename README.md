@@ -65,6 +65,21 @@ npm run dev
 
 Open `http://localhost:3000` and sign in with the administrator you bootstrapped.
 
+## Deploy the sample website to Vercel
+
+Import this GitHub repository into Vercel and set the project **Root
+Directory** to `shuffal`. Vercel will detect Next.js; use `npm run build` as
+the build command and leave the output directory at its default. No environment
+variables are needed for a frontend-only sample deployment.
+
+Without a deployed API, the public site is viewable but enquiry submissions and
+workspace sign-in are unavailable. They will display a backend-not-connected
+message instead of trying to contact localhost. To enable these features,
+deploy the API separately, configure its `FRONTEND_URL` to the Vercel site URL,
+and set `NEXT_PUBLIC_API_URL` in Vercel to the API's public URL ending in
+`/api`. Redeploy the frontend after setting that build-time variable. Do not
+put database credentials or `JWT_SECRET` in `NEXT_PUBLIC_*` variables.
+
 ## API capabilities
 
 The API provides authenticated customer 360 records and endpoints for family
