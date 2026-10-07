@@ -1,0 +1,14 @@
+**/node_modules/
+**/.next/
+**/dist/
+**/coverage/
+**/private-documents/
+**/.env
+**/.env.*
+!**/.env.example
+**/.env.local
+**/prisma/*.db
+**/prisma/*.db-journal
+**/*.tsbuildinfo
+.DS_Store
+Thumbs.db

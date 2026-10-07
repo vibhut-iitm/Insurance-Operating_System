@@ -1,0 +1,485 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id          String   @id @default(uuid())
+  fullName    String
+  dateOfBirth DateTime?
+  gender      String?
+  phone       String
+  email       String?
+  address     String?
+  city        String?
+  state       String?
+  pincode     String?
+  occupation  String?
+  notes       String?
+  status      CustomerStatus @default(ACTIVE)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  familyMembers FamilyMember[]
+  leads         Lead[]
+  quotes        Quote[]
+  policies      Policy[]
+  claims        Claim[]
+  documents     Document[]
+  tasks         Task[]
+  activities    Activity[]
+  renewals      Renewal[]
+  grievances    Grievance[]
+  ombudsmanCases OmbudsmanCase[]
+  communications Communication[]
+  policyMembers PolicyMember[]
+  @@index([phone])
+  @@index([email])
+}
+
+model Role {
+  id        String   @id @default(uuid())
+  name      RoleName @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+}
+
+model User {
+  id           String      @id @default(uuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  isActive     Boolean     @default(true)
+  roleId       String
+  role         Role        @relation(fields: [roleId], references: [id])
+  assignedLeads Lead[]     @relation("LeadAssignee")
+  assignedPolicies Policy[] @relation("PolicyAssignee")
+  assignedRenewals Renewal[] @relation("RenewalAssignee")
+  assignedClaims Claim[]   @relation("ClaimAssignee")
+  assignedTasks Task[]     @relation("TaskAssignee")
+  activities   Activity[]
+  auditLogs    AuditLog[]
+  documents    Document[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  @@index([roleId])
+}
+
+model FamilyMember {
+  id           String   @id @default(uuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  fullName     String
+  relationship String
+  dateOfBirth  DateTime?
+  gender       String?
+  phone        String?
+  isArchived   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime  @updatedAt
+  @@index([customerId])
+}
+
+model Grievance {
+  id                String           @id @default(uuid())
+  customerId        String
+  customer          Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  referenceNumber   String           @unique
+  category          String
+  description       String
+  status            GrievanceStatus  @default(OPEN)
+  complaintDate     DateTime         @default(now())
+  escalationDate   DateTime?
+  followUpDeadline DateTime?
+  companyResponse  String?
+  resolvedAt        DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  ombudsmanCases    OmbudsmanCase[]
+  communications    Communication[]
+  @@index([customerId, status])
+  @@index([followUpDeadline, status])
+}
+
+model OmbudsmanCase {
+  id             String              @id @default(uuid())
+  customerId     String
+  customer       Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  grievanceId    String?
+  grievance      Grievance?          @relation(fields: [grievanceId], references: [id], onDelete: SetNull)
+  caseNumber     String              @unique
+  status         OmbudsmanCaseStatus @default(DRAFT)
+  submissionDate DateTime?
+  hearingDate    DateTime?
+  deadline       DateTime?
+  award          String?
+  notes          String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  communications Communication[]
+  @@index([customerId, status])
+  @@index([deadline, status])
+}
+
+model Communication {
+  id               String             @id @default(uuid())
+  customerId       String
+  customer         Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  grievanceId      String?
+  grievance        Grievance?         @relation(fields: [grievanceId], references: [id], onDelete: SetNull)
+  ombudsmanCaseId  String?
+  ombudsmanCase    OmbudsmanCase?     @relation(fields: [ombudsmanCaseId], references: [id], onDelete: SetNull)
+  channel          CommunicationChannel
+  direction        CommunicationDirection @default(OUTBOUND)
+  subject          String?
+  body             String
+  status           String             @default("RECORDED")
+  occurredAt       DateTime           @default(now())
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  @@index([customerId, occurredAt])
+  @@index([grievanceId])
+  @@index([ombudsmanCaseId])
+}
+
+model InsuranceProduct {
+  id          String   @id @default(uuid())
+  name        String
+  insurer     String
+  category    String
+  description String?
+  isActive    Boolean  @default(true)
+  quotes      Quote[]
+  policies    Policy[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([category, isActive])
+}
+
+model Lead {
+  id             String       @id @default(uuid())
+  customerId     String
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  source         String
+  status         LeadStatus   @default(NEW)
+  priority       Priority     @default(NORMAL)
+  assignedUserId String?
+  assignedUser   User?        @relation("LeadAssignee", fields: [assignedUserId], references: [id])
+  expectedValue  Decimal?     @db.Decimal(14, 2)
+  followUpDate   DateTime?
+  notes          String?
+  requirement    String?
+  category       String?
+  quotes         Quote[]
+  tasks          Task[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  @@index([status, followUpDate])
+  @@index([customerId])
+}
+
+model Quote {
+  id             String        @id @default(uuid())
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  leadId         String?
+  lead           Lead?         @relation(fields: [leadId], references: [id])
+  productId      String
+  product        InsuranceProduct @relation(fields: [productId], references: [id])
+  insurer        String
+  coverage       String?
+  premium        Decimal       @db.Decimal(14, 2)
+  quoteDate      DateTime      @default(now())
+  validityDate   DateTime?
+  benefits       Json?
+  exclusions     Json?
+  deductibles    String?
+  riders         Json?
+  status         QuoteStatus   @default(DRAFT)
+  notes          String?
+  acceptedPolicy Policy?       @relation("AcceptedQuote")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  @@index([customerId, status])
+  @@index([leadId])
+}
+
+model Policy {
+  id             String        @id @default(uuid())
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  productId      String
+  product        InsuranceProduct @relation(fields: [productId], references: [id])
+  quoteId        String?       @unique
+  quote          Quote?        @relation("AcceptedQuote", fields: [quoteId], references: [id])
+  assignedUserId String?
+  assignedUser   User?         @relation("PolicyAssignee", fields: [assignedUserId], references: [id])
+  policyNumber   String        @unique
+  policyType     String
+  startDate      DateTime
+  endDate        DateTime
+  premium        Decimal       @db.Decimal(14, 2)
+  sumInsured     Decimal?      @db.Decimal(14, 2)
+  paymentFrequency String?
+  status         PolicyStatus  @default(PENDING)
+  notes          String?
+  renewals       Renewal[]
+  members        PolicyMember[]
+  claims         Claim[]
+  documents      Document[]
+  tasks          Task[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  @@index([customerId, status])
+  @@index([endDate, status])
+}
+
+model PolicyMember {
+  id           String   @id @default(uuid())
+  policyId     String
+  policy       Policy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  fullName     String
+  relationship String?
+  dateOfBirth  DateTime?
+  isArchived   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@index([policyId])
+  @@index([customerId])
+}
+
+model Renewal {
+  id             String         @id @default(uuid())
+  policyId       String
+  policy         Policy         @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  customerId     String
+  customer       Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  renewalDate    DateTime
+  reminderDate   DateTime?
+  status         RenewalStatus  @default(UPCOMING)
+  assignedUserId String?
+  assignedUser   User?          @relation("RenewalAssignee", fields: [assignedUserId], references: [id])
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  @@index([renewalDate, status])
+  @@unique([policyId, renewalDate])
+}
+
+model Claim {
+  id             String       @id @default(uuid())
+  customerId     String
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  policyId       String
+  policy         Policy       @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  assignedUserId String?
+  assignedUser   User?        @relation("ClaimAssignee", fields: [assignedUserId], references: [id])
+  claimNumber    String       @unique
+  claimType      String
+  incidentDate   DateTime?
+  claimDate      DateTime     @default(now())
+  amount         Decimal?     @db.Decimal(14, 2)
+  status         ClaimStatus  @default(NEW)
+  description    String?
+  notes          String?
+  insuredPerson  String?
+  hospital       String?
+  admissionDate  DateTime?
+  dischargeDate  DateTime?
+  settlementAmount Decimal? @db.Decimal(14, 2)
+  decision       String?
+  closureReason  String?
+  documents      Document[]
+  tasks          Task[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  @@index([customerId, status])
+}
+
+model Document {
+  id           String    @id @default(uuid())
+  fileName     String
+  fileType     String
+  fileSize     Int
+  storageKey   String    @unique
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  policyId     String?
+  policy       Policy?   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  claimId      String?
+  claim        Claim?    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+  category     String    @default("OTHER")
+  tags         String[]  @default([])
+  isArchived   Boolean   @default(false)
+  expiryDate   DateTime?
+  reminderDate DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  @@index([customerId, createdAt])
+}
+
+model Task {
+  id             String       @id @default(uuid())
+  title          String
+  description    String?
+  assignedUserId String?
+  assignedUser   User?        @relation("TaskAssignee", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  policyId       String?
+  policy         Policy?      @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  relatedEntity  String?
+  leadId         String?
+  lead           Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  claimId        String?
+  claim          Claim?       @relation(fields: [claimId], references: [id], onDelete: SetNull)
+  priority       Priority     @default(NORMAL)
+  dueDate        DateTime
+  status         TaskStatus   @default(PENDING)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  @@index([assignedUserId, status, dueDate])
+  @@index([customerId])
+  @@index([leadId])
+  @@index([claimId])
+}
+
+model Activity {
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  type       String
+  description String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@index([customerId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entity     String
+  entityId   String
+  previousValue Json?
+  newValue   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+enum RoleName {
+  ADMIN
+  MANAGER
+  AGENT
+  STAFF
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  WON
+  LOST
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum PolicyStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  LAPSED
+  PENDING
+}
+
+enum RenewalStatus {
+  UPCOMING
+  DUE
+  OVERDUE
+  COMPLETED
+  CANCELLED
+}
+
+enum ClaimStatus {
+  NEW
+  DOCUMENTS_PENDING
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SETTLED
+  CLOSED
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum GrievanceStatus {
+  OPEN
+  IN_PROGRESS
+  ESCALATED
+  RESOLVED
+  CLOSED
+}
+
+enum OmbudsmanCaseStatus {
+  DRAFT
+  SUBMITTED
+  PENDING
+  HEARING
+  AWARD
+  CLOSED
+}
+
+enum CommunicationChannel {
+  PHONE
+  EMAIL
+  SMS
+  WHATSAPP
+  IN_PERSON
+  OTHER
+}
+
+enum CommunicationDirection {
+  INBOUND
+  OUTBOUND
+}
