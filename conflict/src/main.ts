@@ -24,7 +24,7 @@ async function bootstrap() {
   if (process.env.NODE_ENV !== 'production') {
     SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, openApi), { useGlobalPrefix: true });
   }
-  await app.listen(process.env.API_PORT ?? 4000);
+  await app.listen(process.env.PORT ?? process.env.API_PORT ?? 4000);
 }
 
 void bootstrap();
